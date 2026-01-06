@@ -63,10 +63,12 @@ from typing import TYPE_CHECKING, cast
 from urllib import parse
 
 from tuf.api import exceptions
-from tuf.api.metadata import Root, Snapshot, TargetFile, Targets, Timestamp
+from tuf.api.metadata import Root, Snapshot, TargetFile, Targets, Timestamp, Transparency
 from tuf.ngclient._internal.trusted_metadata_set import TrustedMetadataSet
 from tuf.ngclient.config import EnvelopeType, UpdaterConfig
 from tuf.ngclient.urllib3_fetcher import Urllib3Fetcher
+from securesystemslib.signer import SSlibKey, Signature 
+from securesystemslib import formats
 
 if TYPE_CHECKING:
     from tuf.ngclient.fetcher import FetcherInterface
@@ -108,6 +110,7 @@ class Updater:
         fetcher: FetcherInterface | None = None,
         config: UpdaterConfig | None = None,
         bootstrap: bytes | None = None,
+        auditor_key_path: str | None = None
     ):
         self._dir = metadata_dir
         self._metadata_base_url = _ensure_trailing_slash(metadata_base_url)
@@ -142,6 +145,14 @@ class Updater:
         self._persist_root(self._trusted_set.root.version, bootstrap)
         self._update_root_symlink()
 
+        self.auditor_key = None
+        self._transparency = None
+        if auditor_key_path:
+            import json
+            with open(auditor_key_path, "rb") as f:
+                key_dict = json.load(f)
+            self.auditor_key = SSlibKey.from_dict(key_dict["keyid"], key_dict)
+        
     def refresh(self) -> None:
         """Refresh top-level metadata.
 
@@ -170,6 +181,8 @@ class Updater:
         self._load_timestamp()
         self._load_snapshot()
         self._load_targets(Targets.type, Root.type)
+        self._load_transpaprency()
+        
 
     def _generate_target_file_path(self, targetinfo: TargetFile) -> str:
         if self.target_dir is None:
@@ -433,7 +446,52 @@ class Updater:
             return
 
         self._persist_metadata(Timestamp.type, data)
+    
+    def _load_transpaprency(self) -> None:
+        """Load loacal or remote transpaprency metadata"""
+        try:
+            data = self._load_local_metadata(Transparency.type)
+            # TODO: implemnt a security check for the cached data 
+            #In the futute versions we must alter the code structure to be resilient in replay attacks
+            # mixed and match or attacks that threatens the versioning system
+        except (OSError, exceptions.RepositoryError) as e:
+            logger.debug("Local tranparency metdata invalid or missing!: %s", e)
 
+        if not data:
+            data = self._download_metadata(Transparency.type, 1000000)
+            self._persist_metadata(Transparency.type, data)
+
+        try:
+            #load the json object and extract the requred values
+            #signed
+            #signatures
+            #implemnt the verification logic
+            #use the auditors  public key to verify the incoming data
+            import json
+            json_object = json.loads(data)
+
+            signed = json_object["signed"]
+            signatures = json_object["signatures"] 
+
+            canonical_bytes = formats.encode_canonical(signed).encode("utf-8")
+            
+            valid_signature = False
+            for sig in signatures:
+                if sig["key_id"] == self.auditor_key.keyid:
+                    signature_object = Signature.from_dict(sig)
+                    self.auditor_key.verify_signature(signature_object,canonical_bytes)
+                    valid_signature = True
+
+            if not valid_signature:
+                raise exceptions.RepositoryError("Transpaprency metadata not VALID!")
+            
+            self._transparency = Transparency.from_dict(json_object["signed"])
+            logger.info("Transparency Log loaded and verified successfully.")
+
+        except Exception as e:
+            raise exceptions.RepositoryError(f"Transparency Verification Failed: {e}")
+
+   
     def _load_snapshot(self) -> None:
         """Load local (and if needed remote) snapshot metadata."""
         try:

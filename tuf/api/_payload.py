@@ -29,7 +29,7 @@ from tuf.api.exceptions import LengthOrHashMismatchError, UnsignedMetadataError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
+_TRANSPARENCY = "trasparency"
 _ROOT = "root"
 _SNAPSHOT = "snapshot"
 _TARGETS = "targets"
@@ -41,7 +41,7 @@ _BLAKE_HASH_ALGORITHM = "blake2b-256"
 # We aim to support SPECIFICATION_VERSION and require the input metadata
 # files to have the same major version (the first number) as ours.
 SPECIFICATION_VERSION = ["1", "0", "31"]
-TOP_LEVEL_ROLE_NAMES = {_ROOT, _TIMESTAMP, _SNAPSHOT, _TARGETS}
+TOP_LEVEL_ROLE_NAMES = {_ROOT, _TIMESTAMP, _SNAPSHOT, _TARGETS, _TRANSPARENCY}
 
 logger = logging.getLogger(__name__)
 
@@ -1873,3 +1873,32 @@ class Targets(Signed, _DelegatorMixin):
             raise ValueError(f"Key {keyid} not found")
 
         return self.delegations.keys[keyid]
+
+
+class Transparency(Signed):
+
+    type = _TRANSPARENCY
+
+    def __init__(
+        self,
+        version: int | None = None,
+        spec_version: str | None = None,
+        expires: datetime | None = None,
+        unrecognized_fields: dict[str, Any] | None = None,
+     
+    ):super().__init__(version, spec_version, expires, unrecognized_fields)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Tranparency):
+            return False
+
+        return super().__eq__(other) and self.meta == other.meta
+
+    def __hash__(self) -> int:
+        return hash((super().__hash__(), self.meta))
+    
+
+    def to_dict(self) -> dict[str, Any]:
+        transparency_dict = self._common_fields_to_dict()
+        return transparency_dict
+        
