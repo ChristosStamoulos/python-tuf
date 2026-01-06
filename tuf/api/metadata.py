@@ -46,6 +46,7 @@ from tuf.api._payload import (  # noqa: F401
     _SNAPSHOT,
     _TARGETS,
     _TIMESTAMP,
+    _TRANSPARENCY,
     SPECIFICATION_VERSION,
     TOP_LEVEL_ROLE_NAMES,
     BaseFile,
@@ -65,6 +66,7 @@ from tuf.api._payload import (  # noqa: F401
     Targets,
     Timestamp,
     VerificationResult,
+    Transparency,
 )
 from tuf.api.exceptions import UnsignedMetadataError
 
@@ -187,6 +189,8 @@ class Metadata(Generic[T]):
             inner_cls = Timestamp
         elif _type == _ROOT:
             inner_cls = Root
+        elif _type == _TRANSPARENCY:
+            _type == Transparency
         else:
             raise ValueError(f'unrecognized metadata type "{_type}"')
 
