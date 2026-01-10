@@ -1889,7 +1889,7 @@ class Transparency(Signed):
     ):super().__init__(version, spec_version, expires, unrecognized_fields)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Tranparency):
+        if not isinstance(other, Transparency):
             return False
 
         return super().__eq__(other) and self.meta == other.meta

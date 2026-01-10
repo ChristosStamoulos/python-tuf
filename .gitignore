@@ -31,3 +31,6 @@ debian/files
 debian/*.debhelper
 debian/*.substvars
 debian/python*-tuf/
+
+# Sensitive
+examples/client/example-keys/
