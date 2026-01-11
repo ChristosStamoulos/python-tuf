@@ -62,11 +62,13 @@ Example of loading root, timestamp and snapshot:
 """
 
 from __future__ import annotations
-
+import json
+from securesystemslib import formats
 import datetime
 import logging
 from collections import abc
 from typing import TYPE_CHECKING, Union, cast
+from securesystemslib.signer import SSlibKey, Signature
 
 from tuf.api import exceptions
 from tuf.api.dsse import SimpleEnvelope
@@ -78,6 +80,7 @@ from tuf.api.metadata import (
     T,
     Targets,
     Timestamp,
+    Transparency,
 )
 from tuf.ngclient.config import EnvelopeType
 
@@ -194,7 +197,8 @@ class TrustedMetadataSet(abc.Mapping):
             )
 
         # Verify that new root is signed by itself
-        new_root.verify_delegate(Root.type, new_root_bytes, new_root_signatures)
+        new_root.verify_delegate(
+            Root.type, new_root_bytes, new_root_signatures)
 
         self._trusted_set[Root.type] = new_root
         logger.debug("Updated root v%d", new_root.version)
@@ -432,7 +436,8 @@ class TrustedMetadataSet(abc.Mapping):
             )
 
         if new_delegate.is_expired(self.reference_time):
-            raise exceptions.ExpiredMetadataError(f"New {role_name} is expired")
+            raise exceptions.ExpiredMetadataError(
+                f"New {role_name} is expired")
 
         self._trusted_set[role_name] = new_delegate
         logger.debug("Updated %s v%d", role_name, version)
@@ -448,7 +453,8 @@ class TrustedMetadataSet(abc.Mapping):
         new_root, new_root_bytes, new_root_signatures = self._load_data(
             Root, data
         )
-        new_root.verify_delegate(Root.type, new_root_bytes, new_root_signatures)
+        new_root.verify_delegate(
+            Root.type, new_root_bytes, new_root_signatures)
 
         self._trusted_set[Root.type] = new_root
         logger.debug("Loaded trusted root v%d", new_root.version)
@@ -515,3 +521,65 @@ def _load_from_simple_envelope(
         )
 
     return signed, envelope.pae(), envelope.signatures
+
+
+class TrustedTransparency:
+
+    """
+    Trusted collection of client-side Transparency Metadata.
+
+    This class manages the state of the 'transparency.json' file.
+    It enforces security checks (Signature, Versioning, Expiration) 
+    independent of the standard TUF chain.
+    """
+
+    def __init__(self, auditor_key: SSlibKey):
+        self.auditor_key = auditor_key
+        self._trusted: Transparency | None = None
+        self.reference_time = datetime.datetime.now(datetime.timezone.utc)
+
+    @property
+    def trusted(self) -> Transparency | None:
+        return self._trusted
+
+    def update(self,data: bytes) -> None:
+
+        try:
+
+            if hasattr(data, "data"):
+                data = data.data
+
+            json_object = json.loads(data)
+            signed_dict = json_object["signed"]
+            signatures = json_object["signatures"]
+            
+        except (json.JSONDecodeError, KeyError, AttributeError) as e:
+            raise exceptions.RepositoryError(f"Invalid transparency JSON: {e}")
+        
+        canonical_bytes = formats.encode_canonical(signed_dict).encode("utf-8")
+        valid_sig = False
+        for sig in signatures:
+            if sig["keyid"] == self.auditor_key.keyid:
+                sig_obj = Signature.from_dict(sig)
+                try:
+                    self.auditor_key.verify_signature(sig_obj, canonical_bytes)
+                    valid_sig = True
+                    break
+                except Exception:
+                    continue
+        
+        if not valid_sig:
+            raise exceptions.RepositoryError("Transparency Log signature invalid!")
+        
+        new_transparency = Transparency.from_dict(signed_dict)
+        
+        if new_transparency.is_expired(self.reference_time):
+             raise exceptions.ExpiredMetadataError("Transparency Log is expired!")
+
+        if self._trusted and new_transparency.version < self._trusted.version:
+             raise exceptions.ReplayError(
+                 f"Rollback detected! Current: {self._trusted.version}, New: {new_transparency.version}"
+             )
+
+        self._trusted = new_transparency
+        logger.debug("Updated trusted transparency log to v%s", new_transparency.version)
