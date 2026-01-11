@@ -577,7 +577,7 @@ class TrustedTransparency:
              raise exceptions.ExpiredMetadataError("Transparency Log is expired!")
 
         if self._trusted and new_transparency.version < self._trusted.version:
-             raise exceptions.ReplayError(
+             raise exceptions.BadVersionNumberError(
                  f"Rollback detected! Current: {self._trusted.version}, New: {new_transparency.version}"
              )
 

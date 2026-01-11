@@ -465,20 +465,17 @@ class Updater:
         except (OSError, exceptions.RepositoryError) as e:
             logger.debug(
                 "Local transparency metadata invalid or missing: %s", e)
-            data = None  
+        try:
 
-        if data is None:
-            try:
+            remote_data = self._download_metadata(Transparency.type, 1000000)
 
-                data = self._download_metadata(Transparency.type, 1000000)
+            self._trusted_transparency.update(remote_data)
 
-                self._trusted_transparency.update(data)
-
-                self._persist_metadata(Transparency.type, data)
-                logger.info("Downloaded and verified new Transparency Log.")
-            except Exception as e:
-                raise exceptions.RepositoryError(
-                    f"Transparency Verification Failed: {e}")
+            self._persist_metadata(Transparency.type, data)
+            logger.info("Downloaded and verified new Transparency Log.")
+        except Exception as e:
+            raise exceptions.RepositoryError(
+                f"Transparency Verification Failed: {e}")
 
     def _load_snapshot(self) -> None:
         """Load local (and if needed remote) snapshot metadata."""
