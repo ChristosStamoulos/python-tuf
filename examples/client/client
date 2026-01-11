@@ -20,6 +20,7 @@ from tuf.ngclient import Updater
 # constants
 DOWNLOAD_DIR = "./downloads"
 CLIENT_EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
+AUDITOR_KEY = "exaple-keys/auditor_key1.pub"
 
 def build_metadata_dir(base_url: str) -> str:
     """build a unique and reproducible directory name for the repository url"""
@@ -49,7 +50,7 @@ def init_tofu(base_url: str) -> bool:
         target_base_url=f"{base_url}/targets/",
         target_dir=DOWNLOAD_DIR,
         bootstrap=response.data,
-        auditor_key_path="examples\client\example-keys\auditor_ke1.pub"
+        auditor_key_path=AUDITOR_KEY
     )
 
     print(f"Trust-on-First-Use: Initialized new root in {metadata_dir}")
@@ -88,6 +89,7 @@ def download(base_url: str, target: str) -> bool:
             metadata_base_url=f"{base_url}/metadata/",
             target_base_url=f"{base_url}/targets/",
             target_dir=DOWNLOAD_DIR,
+            auditor_key_path=AUDITOR_KEY
         )
         updater.refresh()
 

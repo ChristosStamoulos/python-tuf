@@ -29,7 +29,7 @@ from tuf.api.exceptions import LengthOrHashMismatchError, UnsignedMetadataError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-_TRANSPARENCY = "trasparency"
+_TRANSPARENCY = "transparency"
 _ROOT = "root"
 _SNAPSHOT = "snapshot"
 _TARGETS = "targets"
@@ -41,7 +41,7 @@ _BLAKE_HASH_ALGORITHM = "blake2b-256"
 # We aim to support SPECIFICATION_VERSION and require the input metadata
 # files to have the same major version (the first number) as ours.
 SPECIFICATION_VERSION = ["1", "0", "31"]
-TOP_LEVEL_ROLE_NAMES = {_ROOT, _TIMESTAMP, _SNAPSHOT, _TARGETS, _TRANSPARENCY}
+TOP_LEVEL_ROLE_NAMES = {_ROOT, _TIMESTAMP, _SNAPSHOT, _TARGETS}
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,8 @@ def _hash_file(f: IO[bytes], algo: str) -> str:
     """Returns hexdigest for file using algo."""
     f.seek(0)
     if sys.version_info >= (3, 11):
-        digest = hashlib.file_digest(f, lambda: _get_digest(algo))  # type: ignore[arg-type]
+        digest = hashlib.file_digest(
+            f, lambda: _get_digest(algo))  # type: ignore[arg-type]
 
     else:
         # Fallback for older Pythons. Chunk size is taken from the previously
@@ -472,7 +473,8 @@ class _DelegatorMixin(metaclass=abc.ABCMeta):
                 signed[keyid] = key
             except sslib_exceptions.UnverifiedSignatureError:
                 unsigned[keyid] = key
-                logger.info("Key %s failed to verify %s", keyid, delegated_role)
+                logger.info("Key %s failed to verify %s",
+                            keyid, delegated_role)
 
         return VerificationResult(role.threshold, signed, unsigned)
 
@@ -1372,7 +1374,7 @@ class SuccinctRoles(Role):
         if not role_name.startswith(desired_prefix):
             return False
 
-        suffix = role_name[len(desired_prefix) :]
+        suffix = role_name[len(desired_prefix):]
         if len(suffix) != self.suffix_len:
             return False
 
@@ -1876,6 +1878,27 @@ class Targets(Signed, _DelegatorMixin):
 
 
 class Transparency(Signed):
+    """A container for the signed part of transparency metadata.
+
+    Transparency contains a list of immutable manifests (target hashes) that 
+    are trusted by the Auditor.
+
+    *All parameters named below are not just constructor arguments but also
+    instance attributes.*
+
+    Args:
+        version: Metadata version number. Default is 1.
+        spec_version: Supported TUF specification version. Default is the
+            version currently supported by the library.
+        expires: Metadata expiry date. Default is current date and time.
+        immutable_manifests: List of target file hashes that are trusted. 
+            Default is empty list.
+        unrecognized_fields: Dictionary of all attributes that are not managed
+            by TUF Metadata API
+
+    Raises:
+        ValueError: Invalid arguments.
+    """
 
     type = _TRANSPARENCY
 
@@ -1884,21 +1907,43 @@ class Transparency(Signed):
         version: int | None = None,
         spec_version: str | None = None,
         expires: datetime | None = None,
+        immutable_manifests: list[str] | None = None,
         unrecognized_fields: dict[str, Any] | None = None,
-     
-    ):super().__init__(version, spec_version, expires, unrecognized_fields)
+    ):
+        super().__init__(version, spec_version, expires, unrecognized_fields)
+        self.immutable_manifests = immutable_manifests or []
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Transparency):
             return False
 
-        return super().__eq__(other) and self.meta == other.meta
+        return (
+            super().__eq__(other)
+            and self.immutable_manifests == other.immutable_manifests
+        )
 
     def __hash__(self) -> int:
-        return hash((super().__hash__(), self.meta))
-    
+        
+        return hash((super().__hash__(), tuple(self.immutable_manifests)))
+
+    @classmethod
+    def from_dict(cls, signed_dict: dict[str, Any]) -> Transparency:
+        """Create ``Transparency`` object from its json/dict representation."""
+
+        # 1. Extract common fields (version, expires, etc.)
+        common_args = cls._common_fields_from_dict(signed_dict)
+
+        # 2. Extract specific fields
+        immutable_manifests = signed_dict.pop("immutable_manifests", None)
+
+        # 3. Create instance (signed_dict now only contains unrecognized fields)
+        return cls(*common_args, immutable_manifests, signed_dict)
 
     def to_dict(self) -> dict[str, Any]:
-        transparency_dict = self._common_fields_to_dict()
-        return transparency_dict
         
+        transparency_dict = self._common_fields_to_dict()
+
+        
+        transparency_dict["immutable_manifests"] = self.immutable_manifests
+
+        return transparency_dict
