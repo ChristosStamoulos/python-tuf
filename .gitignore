@@ -33,4 +33,4 @@ debian/*.substvars
 debian/python*-tuf/
 
 # Sensitive
-examples/client/example-keys/
+examples/client/exaple-keys/

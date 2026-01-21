@@ -111,7 +111,7 @@ class Updater:
         fetcher: FetcherInterface | None = None,
         config: UpdaterConfig | None = None,
         bootstrap: bytes | None = None,
-        auditor_key_path: str | None = None
+        auditor_keys_path: str | None = None
         
     ):
         self._dir = metadata_dir
@@ -146,15 +146,33 @@ class Updater:
         )
         self._persist_root(self._trusted_set.root.version, bootstrap)
         self._update_root_symlink()
-
+        
         self.auditor_key = None
         self._trusted_transparency = None
-        if auditor_key_path:
+        if auditor_keys_path:
+            self.trusted_keys_set = load_trusted_keys()
+            self._trusted_transparency = TrustedTransparency(self.trusted_keys_set)        
+              
+        def load_trusted_keys():
             import json
-            with open(auditor_key_path, "rb") as f:
-                key_dict = json.load(f)
-            self.auditor_key = SSlibKey.from_dict(key_dict["keyid"], key_dict)
-            self._trusted_transparency = TrustedTransparency(self.auditor_key)
+            """Loads all auditor public keys from the keys/ directory."""
+            keys = {}
+            if not os.path.exists(auditor_keys_path):
+                raise FileNotFoundError(f"Keys directory not found: {auditor_keys_path}")
+                
+            print(f"Loading auditor keys from {auditor_keys_path}...")
+            for filename in os.listdir(auditor_keys_path):
+                if filename.endswith(".pub"):
+                    path = os.path.join(auditor_keys_path, filename)
+                    try:
+                        with open(path, "rb") as f:
+                            key_data = json.load(f)
+                        
+                        key_obj = SSlibKey.from_dict(key_data["keyid"], key_data)
+                        keys[key_data["keyid"]] = key_obj
+                    except Exception as e:
+                        print(f"  [Warning] Could not load {filename}: {e}")
+            return keys
 
     def refresh(self) -> None:
         """Refresh top-level metadata.

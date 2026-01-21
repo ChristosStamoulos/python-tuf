@@ -533,8 +533,8 @@ class TrustedTransparency:
     independent of the standard TUF chain.
     """
 
-    def __init__(self, auditor_key: SSlibKey):
-        self.auditor_key = auditor_key
+    def __init__(self, auditor_keys: dict, threshhold =3):
+        self.auditor_key_set = auditor_keys
         self._trusted: Transparency | None = None
         self.reference_time = datetime.datetime.now(datetime.timezone.utc)
 
@@ -543,7 +543,7 @@ class TrustedTransparency:
         return self._trusted
 
     def update(self,data: bytes) -> None:
-
+        valid_sig = []
         try:
 
             if hasattr(data, "data"):
@@ -557,19 +557,34 @@ class TrustedTransparency:
             raise exceptions.RepositoryError(f"Invalid transparency JSON: {e}")
         
         canonical_bytes = formats.encode_canonical(signed_dict).encode("utf-8")
-        valid_sig = False
-        for sig in signatures:
-            if sig["keyid"] == self.auditor_key.keyid:
-                sig_obj = Signature.from_dict(sig)
-                try:
-                    self.auditor_key.verify_signature(sig_obj, canonical_bytes)
-                    valid_sig = True
-                    break
-                except Exception:
-                    continue
+       
+        valid_signers = set()
         
-        if not valid_sig:
-            raise exceptions.RepositoryError("Transparency Log signature invalid!")
+        
+        for sig in signatures:
+            key_id = sig.get("keyid")
+            
+            if key_id not in self.auditor_keys:
+                continue
+            
+            if key_id in valid_signers:
+                continue
+            
+            trusted_key = self.auditor_keys[key_id]
+            sig_obj = Signature.from_dict(sig)
+            
+            try:
+                trusted_key.verify_signature(sig_obj, canonical_bytes)
+                valid_signers.add(key_id) 
+            except Exception:
+                print("signature invalid skiping...")
+                continue
+            
+        
+        if len(valid_signers) < self.threshold:
+            raise exceptions.RepositoryError(
+                f"Transparency Threshold not met! Got {len(valid_signers)}/{self.threshold}"
+            )
         
         new_transparency = Transparency.from_dict(signed_dict)
         
